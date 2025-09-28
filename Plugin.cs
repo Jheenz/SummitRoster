@@ -192,7 +192,7 @@ public class ProgressMap : MonoBehaviourPunCallbacks
             float height = character.refs.stats.heightInMeters;
 
             // Skip if dead (altitude 8000m) Hide Dead Players in Roster
-            if (height >= 7999f)
+            if (height <= 0f || height >= 7999f)
             {
                 if (characterLabels.ContainsKey(character))
                 {
@@ -273,7 +273,7 @@ public class ProgressMap : MonoBehaviourPunCallbacks
         float height = character.refs.stats.heightInMeters;
 
         // Skip creating labels for dead players (altitude 8000m)
-        if (height >= 7999f)
+        if (height <= 0f || height >= 7999f)
         {
             return;
         }
