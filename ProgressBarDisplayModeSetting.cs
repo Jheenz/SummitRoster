@@ -6,6 +6,7 @@ using UnityEngine;
 using Zorro.Core;
 using Zorro.Core.CLI;
 using Zorro.Settings;
+using Unity.Mathematics;
 
 namespace ProgressMap
 {
@@ -45,7 +46,8 @@ namespace ProgressMap
     public enum RosterSide
     {
         Left,
-        Right
+        Right,
+        Top
     }
 
     public class RosterSideSetting : EnumSetting<RosterSide>, IExposedSetting
@@ -77,6 +79,40 @@ namespace ProgressMap
         public bool IsAvailableInGame()
         {
             return false; // not available during gameplay
+        }
+    }
+
+    public class ProgressBarDisplayRangeSetting : FloatSetting, IExposedSetting
+    {
+        public string GetDisplayName()
+        {
+            return "Centered Mode Display Range";
+        }
+
+        public string GetCategory()
+        {
+            return SettingsRegistry.GetPageId("Roster");
+        }
+
+        protected override float GetDefaultValue()
+        {
+            return 100f; // default range in meters
+        }
+
+        // Correct type: float2 instead of Vector2
+        protected override float2 GetMinMaxValue()
+        {
+            return new float2(10f, 1000f); // min, max
+        }
+
+        public override void ApplyValue()
+        {
+            // Optional: trigger refresh logic here
+        }
+
+        public bool IsAvailableInGame()
+        {
+            return true; // allow adjusting during gameplay
         }
     }
 }

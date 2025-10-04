@@ -34,7 +34,7 @@ public class Plugin : BaseUnityPlugin
     {
         SettingsHandler.Instance.AddSetting(new ProgressBarDisplayModeSetting());
         SettingsHandler.Instance.AddSetting(new RosterSideSetting());
-        // SettingsHandler.Instance.AddSetting(new ProgressBarDisplayRangeSetting());
+        SettingsHandler.Instance.AddSetting(new ProgressBarDisplayRangeSetting());
     }
 
     [HarmonyPatch(typeof(RunManager), "StartRun")]
@@ -76,37 +76,64 @@ public class ProgressMap : MonoBehaviourPunCallbacks
     // Reload for changing the RosterSide
     private void ReloadRosterSide()
     {
-        // Get current setting
         rosterSide = SettingsHandler.Instance.GetSetting<RosterSideSetting>().Value;
-        Vector2 sideAnchor = (rosterSide == RosterSide.Right) ? new Vector2(1, 0.5f) : new Vector2(0, 0.5f);
-        float sideOffset = (rosterSide == RosterSide.Right) ? -Offset : Offset;
-        float labelOffsetSign = (rosterSide == RosterSide.Right) ? -1f : 1f;
 
-        // Move the vertical bar
+        // Base references
         var barRect = overlay.transform.Find("AltitudeBar").GetComponent<RectTransform>();
-        barRect.anchorMin = barRect.anchorMax = sideAnchor;
-        barRect.anchoredPosition = new Vector2(sideOffset, bottomOffset);
-
-        // Move the peak text
         RectTransform peakRect = peakGO.GetComponent<RectTransform>();
-        peakRect.anchorMin = peakRect.anchorMax = sideAnchor;
-        peakRect.anchoredPosition = new Vector2(sideOffset, bottomOffset + barHeightPixels / 2f);
 
-        // Destroy all character labels
+        // Clear old labels
         foreach (var kvp in characterLabels.Values)
             Destroy(kvp);
         characterLabels.Clear();
 
-        // Re-add all characters
-        foreach (var character in Character.AllCharacters)
+        // Determine side behavior
+        if (rosterSide == RosterSide.Left || rosterSide == RosterSide.Right)
         {
-            AddCharacter(character);
-            // Adjust label position according to new side
-            var labelRect = characterLabels[character].GetComponent<RectTransform>();
-            labelRect.anchoredPosition += new Vector2(labelOffsetSign * 50f, 0);
+            Vector2 sideAnchor = (rosterSide == RosterSide.Right) ? new Vector2(1, 0.5f) : new Vector2(0, 0.5f);
+            float sideOffset = (rosterSide == RosterSide.Right) ? -Offset : Offset;
+            float labelOffsetSign = (rosterSide == RosterSide.Right) ? -1f : 1f;
+
+            // Move vertical bar
+            barRect.anchorMin = barRect.anchorMax = sideAnchor;
+            barRect.sizeDelta = new Vector2(10, barHeightPixels);
+            barRect.anchoredPosition = new Vector2(sideOffset, bottomOffset);
+
+            // Peak text
+            peakRect.anchorMin = peakRect.anchorMax = sideAnchor;
+            peakRect.anchoredPosition = new Vector2(sideOffset, bottomOffset + barHeightPixels / 2f);
+
+            // Re-add characters vertically
+            foreach (var character in Character.AllCharacters)
+            {
+                AddCharacter(character);
+                var labelRect = characterLabels[character].GetComponent<RectTransform>();
+                labelRect.anchoredPosition += new Vector2(labelOffsetSign * 50f, 0);
+            }
+        }
+        else if (rosterSide == RosterSide.Top)
+        {
+            Vector2 topAnchor = new Vector2(0.5f, 1f);
+            float topOffset = -Offset;
+
+            // Change bar to horizontal
+            barRect.anchorMin = barRect.anchorMax = topAnchor;
+            barRect.sizeDelta = new Vector2(800f, 10f);
+            barRect.anchoredPosition = new Vector2(0, topOffset);
+
+            // Move peak label to right of the bar
+            peakRect.anchorMin = peakRect.anchorMax = topAnchor;
+            peakRect.anchoredPosition = new Vector2(Offset + 400f, topOffset - 20f);
+
+            // Re-add character labels
+            foreach (var character in Character.AllCharacters)
+            {
+                AddCharacter(character);
+                var labelRect = characterLabels[character].GetComponent<RectTransform>();
+                labelRect.anchoredPosition += new Vector2(0, -40f); // below bar
+            }
         }
     }
-
 
     private void Awake()
     {
@@ -174,14 +201,14 @@ public class ProgressMap : MonoBehaviourPunCallbacks
         }
 
         displayMode = SettingsHandler.Instance.GetSetting<ProgressBarDisplayModeSetting>().Value;
-        // displayRange = SettingsHandler.Instance.GetSetting<ProgressBarDisplayRangeSetting>().Value;
+        displayRange = SettingsHandler.Instance.GetSetting<ProgressBarDisplayRangeSetting>().Value;
     }
 
     private void LateUpdate()
     {
         displayMode = SettingsHandler.Instance.GetSetting<ProgressBarDisplayModeSetting>().Value;
         rosterSide = SettingsHandler.Instance.GetSetting<RosterSideSetting>().Value;
-        // displayRange = SettingsHandler.Instance.GetSetting<ProgressBarDisplayRangeSetting>().Value;
+        displayRange = SettingsHandler.Instance.GetSetting<ProgressBarDisplayRangeSetting>().Value;
 
         float sideOffset = (rosterSide == RosterSide.Right) ? -Offset - 50f : Offset + 50f;
 
@@ -219,29 +246,57 @@ public class ProgressMap : MonoBehaviourPunCallbacks
             labelGO.GetComponentInChildren<Image>().color = character.refs.customization.PlayerColor;
 
             float pixelY = 0;
-            if (displayMode == ProgressBarDisplayMode.Full)
+            float pixelX = 0;
+
+            if (rosterSide == RosterSide.Top)
             {
-                float normalized = Mathf.InverseLerp(0f, totalMountainHeight, height);
-                pixelY = Mathf.Lerp(-barHeightPixels / 2f, barHeightPixels / 2f, normalized);
+                if (displayMode == ProgressBarDisplayMode.Full)
+                {
+                    float normalized = Mathf.InverseLerp(0f, totalMountainHeight, height);
+                    pixelX = Mathf.Lerp(-400f, 400f, normalized); // horizontal bar length = 800
+                }
+                else if (displayMode == ProgressBarDisplayMode.Centered)
+                {
+                    float localH = Character.localCharacter.refs.stats.heightInMeters;
+                    float logH = Mathf.Log(localH);
+                    float logMin = logH - Mathf.Log(displayRange);
+                    float logMax = logH + Mathf.Log(displayRange);
+                    float logValue = Mathf.Log(height);
+
+                    float normalized = Mathf.InverseLerp(logMin, logMax, logValue);
+                    normalized = Mathf.Clamp01(normalized);
+
+                    pixelX = Mathf.Lerp(-400f, 400f, normalized);
+                }
             }
-            else if (displayMode == ProgressBarDisplayMode.Centered)
+            else
             {
-                float localH = Character.localCharacter.refs.stats.heightInMeters;
-                float logH = Mathf.Log(localH);
-                float logMin = logH - Mathf.Log(displayRange);
-                float logMax = logH + Mathf.Log(displayRange);
-                float logValue = Mathf.Log(height);
+                // Existing vertical logic
+                if (displayMode == ProgressBarDisplayMode.Full)
+                {
+                    float normalized = Mathf.InverseLerp(0f, totalMountainHeight, height);
+                    pixelY = Mathf.Lerp(-barHeightPixels / 2f, barHeightPixels / 2f, normalized);
+                }
+                else if (displayMode == ProgressBarDisplayMode.Centered)
+                {
+                    float localH = Character.localCharacter.refs.stats.heightInMeters;
+                    float logH = Mathf.Log(localH);
+                    float logMin = logH - Mathf.Log(displayRange);
+                    float logMax = logH + Mathf.Log(displayRange);
+                    float logValue = Mathf.Log(height);
 
-                // normalized now runs 0→1 over [localH/zoom … localH*zoom], with log scaling
-                float normalized = Mathf.InverseLerp(logMin, logMax, logValue);
-                normalized = Mathf.Clamp01(normalized);
+                    float normalized = Mathf.InverseLerp(logMin, logMax, logValue);
+                    normalized = Mathf.Clamp01(normalized);
 
-                pixelY = Mathf.Lerp(-barHeightPixels / 2f, barHeightPixels / 2f, normalized);
-
+                    pixelY = Mathf.Lerp(-barHeightPixels / 2f, barHeightPixels / 2f, normalized);
+                }
             }
 
             RectTransform labelRect = labelGO.GetComponent<RectTransform>();
-            labelRect.anchoredPosition = new Vector2(sideOffset, bottomOffset + pixelY);
+            if (rosterSide == RosterSide.Top)
+                labelRect.anchoredPosition = new Vector2(pixelX, -Offset - 50f);
+            else
+                labelRect.anchoredPosition = new Vector2(sideOffset, bottomOffset + pixelY);
         }
     }
 
@@ -290,10 +345,29 @@ public class ProgressMap : MonoBehaviourPunCallbacks
             // Get side preference
             RosterSide rosterSide = SettingsHandler.Instance.GetSetting<RosterSideSetting>().Value;
 
+            Vector2 sideAnchor;
+            TextAlignmentOptions sideAlign;
+            Vector2 textOffset;
+
             // Side-dependent variables
-            Vector2 sideAnchor = (rosterSide == RosterSide.Right) ? new Vector2(1, 0.5f) : new Vector2(0, 0.5f);
-            TextAlignmentOptions sideAlign = (rosterSide == RosterSide.Right) ? TextAlignmentOptions.Right : TextAlignmentOptions.Left;
-            int textOffset = (rosterSide == RosterSide.Right) ? -20 : 20;
+            if (rosterSide == RosterSide.Left)
+            {
+                sideAnchor = new Vector2(0, 0.5f);
+                sideAlign = TextAlignmentOptions.Left;
+                textOffset = new Vector2(20, 0);
+            }
+            else if (rosterSide == RosterSide.Right)
+            {
+                sideAnchor = new Vector2(1, 0.5f);
+                sideAlign = TextAlignmentOptions.Right;
+                textOffset = new Vector2(-20, 0);
+            }
+            else // TOP
+            {
+                sideAnchor = new Vector2(0.5f, 1f);
+                sideAlign = TextAlignmentOptions.Center;
+                textOffset = new Vector2(0, -5f); // slightly below the bar
+            }
 
             RectTransform labelRect = labelGO.AddComponent<RectTransform>();
             labelRect.anchorMin = labelRect.anchorMax = sideAnchor;
@@ -307,8 +381,8 @@ public class ProgressMap : MonoBehaviourPunCallbacks
 
             RectTransform markerRect = markerGO.GetComponent<RectTransform>();
             markerRect.anchorMin = markerRect.anchorMax = sideAnchor;
-            markerRect.pivot = new Vector2(0.5f, 1);
-            markerRect.sizeDelta = new Vector2(10, 5);
+            markerRect.pivot = new Vector2(0.5f, 0.5f);
+            markerRect.sizeDelta = (rosterSide == RosterSide.Top) ? new Vector2(5, 10) : new Vector2(10, 5);
 
             // Text label
             GameObject textGO = new GameObject($"Text");
@@ -323,7 +397,7 @@ public class ProgressMap : MonoBehaviourPunCallbacks
             RectTransform textRect = textGO.GetComponent<RectTransform>();
             textRect.anchorMin = textRect.anchorMax = sideAnchor;
             textRect.pivot = sideAnchor;
-            textRect.anchoredPosition = new Vector2(textOffset, 0);
+            textRect.anchoredPosition = textOffset;
 
             characterLabels[character] = labelGO;
         }
@@ -335,4 +409,11 @@ public class ProgressMap : MonoBehaviourPunCallbacks
         Object.DestroyImmediate(labelGO);
         characterLabels.Remove(character);
     }
+}
+
+internal static class MyPluginInfo
+{
+    public const string PLUGIN_GUID = "com.yourname.progressmap";
+    public const string PLUGIN_NAME = "Progress Map";
+    public const string PLUGIN_VERSION = "1.0.0";
 }
